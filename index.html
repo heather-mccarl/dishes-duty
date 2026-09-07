@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dishes Duty</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Karla:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #EFEAE0; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+
+/* =========================================================
+   1. PASTE YOUR SUPABASE CONFIG HERE (from Supabase step 4)
+   ========================================================= */
+const SUPABASE_URL = "https://hzjpxrxyzzzipkkiguxl.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_vRI9BfvG5N1sHe3_BlERMw_4XWsx3It";
+/* ========================================================= */
+
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const ROW_ID = 1;
+
+const { useState, useEffect, useCallback } = React;
+
+const DEFAULT_KIDS = [
+  { id: "k1", name: "Kid 1" },
+  { id: "k2", name: "Kid 2" },
+  { id: "k3", name: "Kid 3" },
+];
+const DEFAULT_WINDOW = 21;
+
+function uid() {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function computeStats(kids, dinners, windowSize) {
+  const windowDinners = dinners.slice(-windowSize);
+  return kids.map((kid) => {
+    const home = windowDinners.filter((d) => d.home.includes(kid.id));
+    const cleaned = home.filter((d) => d.cleaner === kid.id);
+    const ratio = home.length > 0 ? cleaned.length / home.length : null;
+    return {
+      id: kid.id,
+      name: kid.name,
+      homeCount: home.length,
+      cleanedCount: cleaned.length,
+      ratio,
+    };
+  });
+}
+
+function suggestCleaner(homeIds, stats) {
+  if (homeIds.length === 0) return null;
+  const candidates = homeIds.map((id) => stats.find((s) => s.id === id));
+  candidates.sort((a, b) => {
+    const ra = a.ratio === null ? -1 : a.ratio;
+    const rb = b.ratio === null ? -1 : b.ratio;
+    if (ra !== rb) return ra - rb;
+    if (a.cleanedCount !== b.cleanedCount) return a.cleanedCount - b.cleanedCount;
+    return Math.random() - 0.5;
+  });
+  return candidates[0].id;
+}
+
+// ---- tiny inline icons (no external icon library needed) ----
+function Icon({ children, size = 18, color = "currentColor" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
+}
+const LockIcon = (p) => (
+  <Icon {...p}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </Icon>
+);
+const UnlockIcon = (p) => (
+  <Icon {...p}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 7.7-1.4" />
+  </Icon>
+);
+const CheckIcon = (p) => (
+  <Icon {...p}>
+    <polyline points="20 6 9 17 4 12" />
+  </Icon>
+);
+const PlusIcon = (p) => (
+  <Icon {...p}>
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </Icon>
+);
+const XIcon = (p) => (
+  <Icon {...p}>
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </Icon>
+);
+const ChevronDownIcon = (p) => (
+  <Icon {...p}>
+    <polyline points="6 9 12 15 18 9" />
+  </Icon>
+);
+const ChevronUpIcon = (p) => (
+  <Icon {...p}>
+    <polyline points="18 15 12 9 6 15" />
+  </Icon>
+);
+const GearIcon = (p) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </Icon>
+);
+const UndoIcon = (p) => (
+  <Icon {...p}>
+    <path d="M3 7v6h6" />
+    <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+  </Icon>
+);
+
+function DinnerDuty() {
+  const [kids, setKids] = useState(DEFAULT_KIDS);
+  const [dinners, setDinners] = useState([]);
+  const [windowSize, setWindowSize] = useState(DEFAULT_WINDOW);
+  const [pin, setPin] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(null);
+
+  const [homeTonight, setHomeTonight] = useState([]);
+  const [manualCleaner, setManualCleaner] = useState(null);
+  const [logged, setLogged] = useState(false);
+
+  const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const [unlocked, setUnlocked] = useState(false);
+  const [showUnlockBox, setShowUnlockBox] = useState(false);
+  const [pinAttempt, setPinAttempt] = useState("");
+  const [pinAttemptError, setPinAttemptError] = useState("");
+
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [pinDraft1, setPinDraft1] = useState("");
+  const [pinDraft2, setPinDraft2] = useState("");
+  const [pinSetupError, setPinSetupError] = useState("");
+
+  const [draftKids, setDraftKids] = useState(kids);
+  const [draftWindowSize, setDraftWindowSize] = useState(windowSize);
+
+  function applyRemoteData(d) {
+    if (!d) return;
+    if (d.kids) setKids(d.kids);
+    if (d.dinners) setDinners(d.dinners);
+    if (d.windowSize) setWindowSize(d.windowSize);
+    setPin(d.pin || null);
+  }
+
+  // Initial fetch, then a Realtime subscription: any device's change
+  // gets pushed to every other open tab/phone automatically.
+  useEffect(() => {
+    let channel;
+
+    async function init() {
+      const { data, error: fetchError } = await supabaseClient
+        .from("dinner_duty")
+        .select("data")
+        .eq("id", ROW_ID)
+        .maybeSingle();
+
+      if (fetchError) {
+        setError("Couldn't connect to Supabase. Check your config and that the table exists.");
+      } else if (data && data.data) {
+        applyRemoteData(data.data);
+      }
+      setLoaded(true);
+
+      channel = supabaseClient
+        .channel("dinner_duty_changes")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "dinner_duty", filter: `id=eq.${ROW_ID}` },
+          (payload) => applyRemoteData(payload.new && payload.new.data)
+        )
+        .subscribe();
+    }
+
+    init();
+    return () => {
+      if (channel) supabaseClient.removeChannel(channel);
+    };
+  }, []);
+
+  const persist = useCallback((next) => {
+    supabaseClient
+      .from("dinner_duty")
+      .upsert({ id: ROW_ID, data: next })
+      .then(({ error: saveError }) => {
+        if (saveError) setError("Couldn't save your last change.");
+      });
+  }, []);
+
+  if (!loaded) {
+    return (
+      <div style={styles.root}>
+        <div style={styles.loadingScreen}>Loading dinner duty…</div>
+      </div>
+    );
+  }
+
+  const stats = computeStats(kids, dinners, windowSize);
+  const suggestion = logged ? null : suggestCleaner(homeTonight, stats);
+  const activeCleaner = manualCleaner || suggestion;
+  const activeCleanerName = kids.find((k) => k.id === activeCleaner)?.name;
+  const maxRatio = Math.max(0.01, ...stats.map((s) => s.ratio || 0));
+
+  function toggleHome(id) {
+    setHomeTonight((prev) =>
+      prev.includes(id) ? prev.filter((h) => h !== id) : [...prev, id]
+    );
+    setManualCleaner(null);
+    setLogged(false);
+  }
+
+  // Every save below happens inside a click handler, in response to a
+  // button press, never automatically while someone is still typing.
+  function logDinner() {
+    if (homeTonight.length === 0 || !activeCleaner) return;
+    const entry = {
+      id: uid(),
+      dateISO: new Date().toISOString(),
+      home: homeTonight,
+      cleaner: activeCleaner,
+    };
+    const nextDinners = [...dinners, entry];
+    setDinners(nextDinners);
+    setLogged(true);
+    persist({ kids, dinners: nextDinners, windowSize, pin });
+  }
+
+  function startOver() {
+    setHomeTonight([]);
+    setManualCleaner(null);
+    setLogged(false);
+  }
+
+  function undoLast() {
+    const nextDinners = dinners.slice(0, -1);
+    setDinners(nextDinners);
+    startOver();
+    persist({ kids, dinners: nextDinners, windowSize, pin });
+  }
+
+  function openSettings() {
+    setDraftKids(kids.map((k) => ({ ...k })));
+    setDraftWindowSize(windowSize);
+    setShowSettings(true);
+  }
+
+  function closeSettings() {
+    setShowSettings(false);
+  }
+
+  function renameDraftKid(id, name) {
+    setDraftKids((prev) => prev.map((k) => (k.id === id ? { ...k, name } : k)));
+  }
+
+  function addDraftKid() {
+    setDraftKids((prev) => [...prev, { id: uid(), name: "New kid" }]);
+  }
+
+  function removeDraftKid(id) {
+    setDraftKids((prev) => prev.filter((k) => k.id !== id));
+  }
+
+  function saveSettings() {
+    const cleanedKids = draftKids.filter((k) => k.name.trim().length > 0);
+    setKids(cleanedKids);
+    setWindowSize(draftWindowSize);
+    setHomeTonight((prev) => prev.filter((id) => cleanedKids.some((k) => k.id === id)));
+    persist({ kids: cleanedKids, dinners, windowSize: draftWindowSize, pin });
+    setShowSettings(false);
+  }
+
+  function attemptUnlock() {
+    if (pinAttempt === pin) {
+      setUnlocked(true);
+      setShowUnlockBox(false);
+      setPinAttempt("");
+      setPinAttemptError("");
+    } else {
+      setPinAttemptError("That's not it, try again.");
+    }
+  }
+
+  function submitPinSetup() {
+    if (pinDraft1.length < 4) {
+      setPinSetupError("Use at least 4 digits.");
+      return;
+    }
+    if (pinDraft1 !== pinDraft2) {
+      setPinSetupError("Those two don't match.");
+      return;
+    }
+    setPin(pinDraft1);
+    setUnlocked(true);
+    setShowPinSetup(false);
+    setPinDraft1("");
+    setPinDraft2("");
+    setPinSetupError("");
+    persist({ kids, dinners, windowSize, pin: pinDraft1 });
+  }
+
+  const parentControlsVisible = unlocked;
+
+  return (
+    <div style={styles.root}>
+      <header style={styles.header}>
+        <div>
+          <div style={styles.eyebrow}>Whoever's home, takes a turn</div>
+          <h1 style={styles.title}>Dishes Duty</h1>
+        </div>
+        {pin && (
+          <button
+            style={styles.iconButton}
+            onClick={() => {
+              if (unlocked) {
+                setUnlocked(false);
+                setShowSettings(false);
+              } else {
+                setShowUnlockBox((s) => !s);
+              }
+            }}
+            aria-label={unlocked ? "Lock parent controls" : "Unlock parent controls"}
+          >
+            {unlocked ? <UnlockIcon color="#5F7350" /> : <LockIcon color="#2B2A25" />}
+          </button>
+        )}
+      </header>
+
+      {error && <div style={styles.errorBanner}>{error}</div>}
+
+      {!pin && !showPinSetup && (
+        <div style={styles.pinPrompt}>
+          <div style={styles.pinPromptText}>
+            No parent PIN is set yet, so anyone with this link can log
+            dinners and change settings.
+          </div>
+          <button style={styles.pinPromptButton} onClick={() => setShowPinSetup(true)}>
+            Set a parent PIN
+          </button>
+        </div>
+      )}
+
+      {showPinSetup && (
+        <div style={styles.pinSetupBox}>
+          <div style={styles.settingsLabel}>Set a parent PIN</div>
+          <input
+            style={styles.pinInput}
+            type="password"
+            inputMode="numeric"
+            placeholder="4+ digits"
+            value={pinDraft1}
+            onChange={(e) => setPinDraft1(e.target.value.replace(/\D/g, ""))}
+          />
+          <input
+            style={styles.pinInput}
+            type="password"
+            inputMode="numeric"
+            placeholder="Confirm PIN"
+            value={pinDraft2}
+            onChange={(e) => setPinDraft2(e.target.value.replace(/\D/g, ""))}
+          />
+          {pinSetupError && <div style={styles.pinError}>{pinSetupError}</div>}
+          <button style={styles.logButtonDark} onClick={submitPinSetup}>
+            Save PIN
+          </button>
+          <div style={styles.settingsHint}>
+            Only share this PIN with parents. Kids can still see everyone's
+            stats without it.
+          </div>
+        </div>
+      )}
+
+      {showUnlockBox && !unlocked && (
+        <div style={styles.pinSetupBox}>
+          <div style={styles.settingsLabel}>Enter parent PIN</div>
+          <input
+            style={styles.pinInput}
+            type="password"
+            inputMode="numeric"
+            autoFocus
+            value={pinAttempt}
+            onChange={(e) => {
+              setPinAttempt(e.target.value.replace(/\D/g, ""));
+              setPinAttemptError("");
+            }}
+            onKeyDown={(e) => e.key === "Enter" && attemptUnlock()}
+          />
+          {pinAttemptError && <div style={styles.pinError}>{pinAttemptError}</div>}
+          <button style={styles.logButtonDark} onClick={attemptUnlock}>
+            Unlock
+          </button>
+        </div>
+      )}
+
+      {parentControlsVisible && (
+        <React.Fragment>
+          <div style={styles.parentBar}>
+            <span>Parent controls unlocked</span>
+            <button
+              style={styles.settingsGearInline}
+              onClick={() => (showSettings ? closeSettings() : openSettings())}
+              aria-label="Settings"
+            >
+              <GearIcon size={16} color="#5F7350" />
+            </button>
+          </div>
+
+          {showSettings && (
+            <section style={styles.settingsPanel}>
+              <div style={styles.settingsLabel}>Kids</div>
+              {draftKids.map((kid) => (
+                <div key={kid.id} style={styles.kidEditRow}>
+                  <input
+                    style={styles.kidNameInput}
+                    value={kid.name}
+                    onChange={(e) => renameDraftKid(kid.id, e.target.value)}
+                  />
+                  <button
+                    style={styles.smallIconButton}
+                    onClick={() => removeDraftKid(kid.id)}
+                    aria-label={`Remove ${kid.name}`}
+                  >
+                    <XIcon size={16} color="#7A7666" />
+                  </button>
+                </div>
+              ))}
+              <button style={styles.addKidButton} onClick={addDraftKid}>
+                <PlusIcon size={16} />
+                <span>Add kid</span>
+              </button>
+
+              <div style={{ ...styles.settingsLabel, marginTop: 20 }}>Fairness window</div>
+              <div style={styles.windowRow}>
+                {[7, 14, 21, 30].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setDraftWindowSize(n)}
+                    style={{
+                      ...styles.windowChip,
+                      ...(draftWindowSize === n ? styles.windowChipActive : {}),
+                    }}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <div style={styles.settingsHint}>
+                Fairness is based on your kids' last {draftWindowSize} logged
+                dinners, not the whole calendar. Nothing here saves until you
+                tap "Save changes" below.
+              </div>
+
+              <div style={styles.settingsButtonRow}>
+                <button style={styles.cancelButton} onClick={closeSettings}>
+                  Cancel
+                </button>
+                <button style={styles.saveSettingsButton} onClick={saveSettings}>
+                  Save changes
+                </button>
+              </div>
+
+              {dinners.length > 0 && (
+                <button style={styles.undoButton} onClick={undoLast}>
+                  <UndoIcon size={15} />
+                  <span>Undo last logged dinner</span>
+                </button>
+              )}
+            </section>
+          )}
+
+          <section style={styles.tonightCard}>
+            <div style={styles.tonightLabel}>Tonight, who's home?</div>
+            <div style={styles.chipRow}>
+              {kids.map((kid) => {
+                const active = homeTonight.includes(kid.id);
+                return (
+                  <button
+                    key={kid.id}
+                    onClick={() => toggleHome(kid.id)}
+                    style={{ ...styles.chip, ...(active ? styles.chipActive : {}) }}
+                  >
+                    {kid.name}
+                  </button>
+                );
+              })}
+            </div>
+
+            {homeTonight.length > 0 && !logged && (
+              <div style={styles.suggestionBlock}>
+                <div style={styles.suggestionLabel}>Cleanup goes to</div>
+                <div style={styles.suggestionName}>{activeCleanerName}</div>
+
+                {homeTonight.length > 1 && (
+                  <div style={styles.reassignRow}>
+                    <span style={styles.reassignLabel}>Not tonight — pick</span>
+                    {homeTonight
+                      .filter((id) => id !== activeCleaner)
+                      .map((id) => (
+                        <button
+                          key={id}
+                          style={styles.reassignChip}
+                          onClick={() => setManualCleaner(id)}
+                        >
+                          {kids.find((k) => k.id === id)?.name}
+                        </button>
+                      ))}
+                  </div>
+                )}
+
+                <button style={styles.logButton} onClick={logDinner}>
+                  <CheckIcon size={17} />
+                  <span>Log it</span>
+                </button>
+              </div>
+            )}
+
+            {logged && (
+              <div style={styles.loggedBlock}>
+                <div style={styles.loggedText}>
+                  Logged — {activeCleanerName} is on cleanup tonight.
+                </div>
+                <button style={styles.newDinnerButton} onClick={startOver}>
+                  Log a different dinner
+                </button>
+              </div>
+            )}
+          </section>
+        </React.Fragment>
+      )}
+
+      {!parentControlsVisible && pin && (
+        <div style={styles.lockedNotice}>
+          Ask a parent to unlock and log tonight's dinner. Stats below are
+          always visible.
+        </div>
+      )}
+
+      <section style={styles.statsSection}>
+        <div style={styles.statsHeading}>
+          Last {Math.min(windowSize, dinners.length)} dinner{dinners.length === 1 ? "" : "s"}
+        </div>
+        {stats.map((s) => (
+          <div key={s.id} style={styles.statRow}>
+            <div style={styles.statTop}>
+              <span style={styles.statName}>{s.name}</span>
+              <span style={styles.statRatio}>
+                {s.ratio === null ? "—" : `${Math.round(s.ratio * 100)}%`}
+              </span>
+            </div>
+            <div style={styles.barTrack}>
+              <div
+                style={{
+                  ...styles.barFill,
+                  width: s.ratio === null ? "0%" : `${Math.max(4, (s.ratio / maxRatio) * 100)}%`,
+                }}
+              />
+            </div>
+            <div style={styles.statSub}>
+              home {s.homeCount} · cleaned {s.cleanedCount}
+            </div>
+          </div>
+        ))}
+        {dinners.length === 0 && (
+          <div style={styles.emptyState}>
+            No dinners logged yet. A parent can log the first one above.
+          </div>
+        )}
+      </section>
+
+      {dinners.length > 0 && (
+        <section style={styles.historySection}>
+          <button style={styles.historyToggle} onClick={() => setShowHistory((h) => !h)}>
+            <span>History</span>
+            {showHistory ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
+          </button>
+          {showHistory && (
+            <div style={styles.historyList}>
+              {[...dinners]
+                .slice(-30)
+                .reverse()
+                .map((d) => (
+                  <div key={d.id} style={styles.historyRow}>
+                    <span style={styles.historyDate}>{formatDate(d.dateISO)}</span>
+                    <span style={styles.historyDetail}>
+                      {d.home
+                        .map((id) => kids.find((k) => k.id === id)?.name)
+                        .filter(Boolean)
+                        .join(", ")}{" "}
+                      home · {kids.find((k) => k.id === d.cleaner)?.name} cleaned
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+const styles = {
+  root: {
+    fontFamily: "'Karla', sans-serif",
+    background: "#EEF0FA",
+    color: "#1E2246",
+    minHeight: "100vh",
+    maxWidth: 480,
+    margin: "0 auto",
+    padding: "20px 16px 40px",
+    boxSizing: "border-box",
+  },
+  loadingScreen: { padding: 40, textAlign: "center", color: "#7076A6" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 },
+  eyebrow: { fontSize: 12.5, color: "#5C66A0", marginBottom: 2 },
+  title: { fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 30, margin: 0, letterSpacing: "-0.01em" },
+  iconButton: { background: "none", border: "none", padding: 6, cursor: "pointer", marginTop: 2 },
+  errorBanner: { background: "#F6D9DC", color: "#7A2430", padding: "10px 12px", borderRadius: 8, fontSize: 13.5, marginBottom: 14 },
+  pinPrompt: { background: "#E4E7FA", border: "1px solid #7B87E0", borderRadius: 12, padding: "12px 14px", marginBottom: 16 },
+  pinPromptText: { fontSize: 13, color: "#26306B", marginBottom: 8, lineHeight: 1.5 },
+  pinPromptButton: { background: "#7B87E0", color: "#1C2348", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" },
+  pinSetupBox: { background: "#F7F8FE", border: "1px solid #D9DDF2", borderRadius: 12, padding: 16, marginBottom: 16 },
+  pinInput: { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #D9DDF2", fontFamily: "'Karla', sans-serif", fontSize: 15, background: "#fff", marginBottom: 8, boxSizing: "border-box", letterSpacing: "0.15em" },
+  pinError: { color: "#B6416E", fontSize: 12.5, marginBottom: 8 },
+  logButtonDark: { width: "100%", background: "#1C2348", color: "#F5F6FD", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 14.5, fontWeight: 700, cursor: "pointer", fontFamily: "'Karla', sans-serif" },
+  parentBar: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#E1E4F7", color: "#26306B", borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 700, marginBottom: 12 },
+  settingsGearInline: { background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" },
+  lockedNotice: { background: "#F7F8FE", border: "1px solid #D9DDF2", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#7076A6", marginBottom: 18, lineHeight: 1.5 },
+  settingsPanel: { background: "#F7F8FE", borderRadius: 12, padding: 16, marginBottom: 16, border: "1px solid #D9DDF2" },
+  settingsLabel: { fontSize: 12.5, fontWeight: 700, color: "#5C66A0", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 },
+  kidEditRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 },
+  kidNameInput: { flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid #D9DDF2", fontFamily: "'Karla', sans-serif", fontSize: 14.5, background: "#fff" },
+  smallIconButton: { background: "none", border: "none", cursor: "pointer", padding: 4 },
+  addKidButton: { display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px dashed #A6ADE0", borderRadius: 8, padding: "7px 12px", fontSize: 13.5, color: "#5561C9", cursor: "pointer", marginTop: 2 },
+  windowRow: { display: "flex", gap: 8 },
+  windowChip: { flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #D9DDF2", background: "#fff", fontSize: 14, color: "#1E2246", cursor: "pointer" },
+  windowChipActive: { background: "#7B87E0", color: "#1C2348", borderColor: "#7B87E0" },
+  settingsHint: { fontSize: 12.5, color: "#8790C0", marginTop: 8, lineHeight: 1.5 },
+  undoButton: { display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#4A5296", fontSize: 13, cursor: "pointer", marginTop: 16, padding: 0 },
+  settingsButtonRow: { display: "flex", gap: 10, marginTop: 18 },
+  cancelButton: { flex: 1, background: "none", border: "1px solid #D9DDF2", borderRadius: 10, padding: "10px 0", fontSize: 14, color: "#5C66A0", cursor: "pointer", fontFamily: "'Karla', sans-serif" },
+  saveSettingsButton: { flex: 2, background: "#1C2348", color: "#F5F6FD", border: "none", borderRadius: 10, padding: "10px 0", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Karla', sans-serif" },
+  tonightCard: { background: "#1C2348", borderRadius: 16, padding: "20px 18px", marginBottom: 18 },
+  tonightLabel: { color: "#A9AFE0", fontSize: 13.5, marginBottom: 10 },
+  chipRow: { display: "flex", flexWrap: "wrap", gap: 8 },
+  chip: { padding: "9px 14px", borderRadius: 20, border: "1px solid #454E80", background: "transparent", color: "#E7E9FA", fontSize: 14.5, cursor: "pointer", fontFamily: "'Karla', sans-serif" },
+  chipActive: { background: "#7B87E0", borderColor: "#7B87E0", color: "#1C2348", fontWeight: 700 },
+  suggestionBlock: { marginTop: 18, paddingTop: 16, borderTop: "1px solid #343C6B" },
+  suggestionLabel: { color: "#9AA3D9", fontSize: 12.5 },
+  suggestionName: { fontFamily: "'Fraunces', serif", fontSize: 28, color: "#F5F6FD", fontWeight: 600, marginTop: 2 },
+  reassignRow: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 10 },
+  reassignLabel: { fontSize: 12, color: "#8B94CC", marginRight: 2 },
+  reassignChip: { padding: "5px 10px", borderRadius: 14, border: "1px solid #454E80", background: "transparent", color: "#D3D7F5", fontSize: 12.5, cursor: "pointer" },
+  logButton: { display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", background: "#7B87E0", color: "#1C2348", border: "none", borderRadius: 10, padding: "12px 0", fontSize: 15, fontWeight: 700, cursor: "pointer", marginTop: 16, fontFamily: "'Karla', sans-serif" },
+  loggedBlock: { marginTop: 18, paddingTop: 16, borderTop: "1px solid #343C6B" },
+  loggedText: { color: "#E7E9FA", fontSize: 15 },
+  newDinnerButton: { background: "none", border: "none", color: "#A6AFF0", fontSize: 13.5, marginTop: 10, cursor: "pointer", padding: 0, textDecoration: "underline" },
+  statsSection: { marginBottom: 8 },
+  statsHeading: { fontSize: 12.5, fontWeight: 700, color: "#5C66A0", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 },
+  statRow: { marginBottom: 14 },
+  statTop: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 },
+  statName: { fontSize: 15.5, fontWeight: 700 },
+  statRatio: { fontFamily: "'Fraunces', serif", fontSize: 17, color: "#5561C9" },
+  barTrack: { height: 8, borderRadius: 4, background: "#D9DDF2", overflow: "hidden" },
+  barFill: { height: "100%", borderRadius: 4, background: "#7B87E0" },
+  statSub: { fontSize: 12, color: "#8790C0", marginTop: 4 },
+  emptyState: { fontSize: 13.5, color: "#8790C0", padding: "8px 0" },
+  historySection: { marginTop: 8, borderTop: "1px solid #D9DDF2", paddingTop: 12 },
+  historyToggle: { display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C66A0", fontSize: 13.5, fontWeight: 700, cursor: "pointer", padding: 0 },
+  historyList: { marginTop: 10 },
+  historyRow: { display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 0", borderBottom: "1px solid #E4E7F7", fontSize: 12.5 },
+  historyDate: { color: "#8790C0", whiteSpace: "nowrap" },
+  historyDetail: { color: "#1E2246", textAlign: "right" },
+};
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<DinnerDuty />);
+
+</script>
+</body>
+</html>
